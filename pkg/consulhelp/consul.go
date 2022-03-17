@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/consul/api"
 	"github.com/hashicorp/consul/api/watch"
@@ -36,12 +37,12 @@ import (
 
 type mutexKV struct {
 	sync.RWMutex
-	kvs map[string][]byte
+	kvs map[string]interface{}
 }
 
-var kvmap = mutexKV{kvs: make(map[string][]byte)}
+var kvmap = mutexKV{kvs: make(map[string]interface{})}
 
-func (v *mutexKV) help(tricky func(map[string][]byte) (bool, interface{})) (bool, interface{}) {
+func (v *mutexKV) help(tricky func(map[string]interface{}) (bool, interface{})) (bool, interface{}) {
 	v.Lock()
 	ok, res := tricky(v.kvs)
 	v.Unlock()
@@ -59,7 +60,7 @@ func (v *mutexKV) help(tricky func(map[string][]byte) (bool, interface{})) (bool
 
 func ClsConfig() {
 	kvmap.Lock()
-	kvmap.kvs = make(map[string][]byte)
+	kvmap.kvs = make(map[string]interface{})
 	kvmap.Unlock()
 	// kvmap = make(map[string][]byte)
 }
@@ -91,7 +92,7 @@ func StartWatch(prefix string, fulfil bool, c context.Context) {
 		for _, v := range keys {
 			if fulfil || v.ModifyIndex == lastIndex {
 				logger.Print(string(v.Value))
-				kvmap.help(func(kvs map[string][]byte) (bool, interface{}) {
+				kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
 					kvs[v.Key] = v.Value
 					return true, nil
 				})
@@ -170,7 +171,7 @@ func DelConfigFull(key string, c context.Context) {
 		panic(err)
 	}
 
-	kvmap.help(func(kvs map[string][]byte) (bool, interface{}) {
+	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
 		delete(kvs, key)
 		return true, nil
 	})
@@ -311,10 +312,29 @@ func GetService(servicename string, c context.Context) []*api.CatalogService {
 
 }
 
+type serviceInfo struct {
+	serviceentry []*api.ServiceEntry
+	lastCheck    time.Time
+}
+
 func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
 	logger := logagent.Inst(c)
 	logger.Info(servicename)
+	// time.Since(time.Now()).Minutes()
+	// f := *consulsets.Cacheminutes * time.Now().Minute()
+	if ok, value := kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+		if val, ok := kvs[servicename]; ok {
+			return ok, val
+		} else {
+			return ok, nil
+		}
+	}); ok {
+
+		if time.Duration(*consulsets.Cacheminutes)*time.Minute > time.Since(value.(serviceInfo).lastCheck) {
+			return value.(serviceInfo).serviceentry
+		}
+	}
 
 	conf := api.DefaultConfig()
 	conf.Address = *consulsets.Consul_host
@@ -331,6 +351,18 @@ func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry
 		logger.Panic(err)
 	}
 	logger.Info(service)
+
+	// var bytetmps bytes.Buffer
+	// enc := gob.NewEncoder(&bytetmps)
+	// err = enc.Encode(service)
+	// if err != nil {
+	// 	logger.Panic(err)
+	// }
+	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+
+		kvs[servicename] = serviceInfo{serviceentry: service, lastCheck: time.Now()}
+		return true, nil
+	})
 
 	return service
 	// // PUT a new KV pair
@@ -353,7 +385,7 @@ func GetConfigFull(key string, c context.Context) []byte {
 	// 	return val
 	// }
 
-	if ok, value := kvmap.help(func(kvs map[string][]byte) (bool, interface{}) {
+	if ok, value := kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
 		if val, ok := kvs[key]; ok {
 			return ok, val
 		} else {
@@ -414,7 +446,7 @@ func GetConfigFull(key string, c context.Context) []byte {
 
 	// kvmap[key] = pair.Value
 
-	kvmap.help(func(kvs map[string][]byte) (bool, interface{}) {
+	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
 		kvs[key] = pair.Value
 		return true, nil
 	})
