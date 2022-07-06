@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/consul/api/watch"
 	"github.com/max-gui/consulagent/pkg/consulsets"
 	"github.com/max-gui/logagent/pkg/logagent"
+	"github.com/max-gui/logagent/pkg/logsets"
 	"gopkg.in/yaml.v2"
 )
 
@@ -317,6 +318,129 @@ type serviceInfo struct {
 	lastCheck    time.Time
 }
 
+type dcInfo struct {
+	dcs       []string
+	lastCheck time.Time
+}
+
+func GetHealthServiceDc(servicename string, c context.Context) []*api.ServiceEntry {
+	// var key = prefix + entityType + "/" + entityId + "/" + env
+	logger := logagent.Inst(c)
+	logger.Info(servicename)
+	// time.Since(time.Now()).Minutes()
+	// f := *consulsets.Cacheminutes * time.Now().Minute()
+	if ok, value := kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+		if val, ok := kvs[servicename+"_dc"]; ok {
+			return ok, val
+		} else {
+			return ok, nil
+		}
+	}); ok {
+
+		if time.Duration(*consulsets.Cacheminutes)*time.Minute > time.Since(value.(serviceInfo).lastCheck) {
+			return value.(serviceInfo).serviceentry
+		}
+	}
+
+	conf := api.DefaultConfig()
+	conf.Address = *consulsets.Consul_host
+	// conf.Address
+	conf.Token = *consulsets.Acltoken
+	client, err := api.NewClient(conf)
+	if err != nil {
+		panic(err)
+	}
+	// Get a handle to the KV API
+	dcs := GetDc(c)
+	// dcs, err := client.Catalog().Datacenters()
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	health := client.Health()
+	// var list []map[string]interface{}
+	var services = []*api.ServiceEntry{}
+	for _, dc := range dcs {
+		if dc != *logsets.Appdc && dc != "config" {
+			service, _, err := health.Service(servicename, "", true, &api.QueryOptions{Datacenter: dc})
+			if err != nil {
+				logger.Panic(err)
+			}
+			services = append(services, service...)
+		}
+	}
+
+	logger.Info(services)
+
+	// var bytetmps bytes.Buffer
+	// enc := gob.NewEncoder(&bytetmps)
+	// err = enc.Encode(service)
+	// if err != nil {
+	// 	logger.Panic(err)
+	// }
+	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+
+		kvs[servicename+"_dc"] = serviceInfo{serviceentry: services, lastCheck: time.Now()}
+		return true, nil
+	})
+
+	return services
+	// // PUT a new KV pair
+	// p := &api.KVPair{Key: "REDIS_MAXCLIENTS", Value: []byte("1000")}
+	// _, err = kv.Put(p, nil)
+	// if err != nil {
+	// 	panic(err)
+	// }
+
+	// Lookup the pair
+
+}
+
+func GetDc(c context.Context) []string {
+	// var key = prefix + entityType + "/" + entityId + "/" + env
+	logger := logagent.Inst(c)
+	// time.Since(time.Now()).Minutes()
+	// f := *consulsets.Cacheminutes * time.Now().Minute()
+
+	if ok, value := kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+		if val, ok := kvs["dc"]; ok {
+			return ok, val
+		} else {
+			return ok, nil
+		}
+	}); ok {
+
+		if time.Duration(*consulsets.Cacheminutes)*time.Minute > time.Since(value.(dcInfo).lastCheck) {
+			return value.(dcInfo).dcs
+		}
+	}
+
+	conf := api.DefaultConfig()
+	conf.Address = *consulsets.Consul_host
+	// conf.Address
+	conf.Token = *consulsets.Acltoken
+	client, err := api.NewClient(conf)
+	if err != nil {
+		panic(err)
+	}
+	// Get a handle to the KV API
+	dcs, err := client.Catalog().Datacenters()
+	if err != nil {
+		panic(err)
+	}
+
+	logger.Info(dcs)
+
+	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+
+		kvs["dc"] = dcInfo{dcs: dcs, lastCheck: time.Now()}
+		return true, nil
+	})
+
+	return dcs
+
+}
+
 func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
 	logger := logagent.Inst(c)
@@ -344,7 +468,6 @@ func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry
 	if err != nil {
 		panic(err)
 	}
-	// Get a handle to the KV API
 	health := client.Health()
 	service, _, err := health.Service(servicename, "", true, &api.QueryOptions{})
 	if err != nil {
