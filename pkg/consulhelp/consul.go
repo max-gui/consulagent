@@ -441,6 +441,42 @@ func GetDc(c context.Context) []string {
 
 }
 
+func ServiceEntryPrint(service *api.ServiceEntry) string {
+	// entry.Service.Meta["x-baggage-AF-env"]; ok {
+	// 	if entryregion, ok := entry.Service.Meta["x-baggage-AF-region"]; ok {
+	// 		if entrydc, ok := entry.Service.Meta["dc"]; ok {
+	// 			entryextaddress, _ := entry.Service.Meta["extaddress"]
+	// 			entryextport, _ := entry.Service.Meta["extport"]
+	// 			entry.Service.Address + ":" + strconv.Itoa(entry.Service.Port),
+	var logmess = fmt.Sprintf("name:%s,x-baggage-AF-env:%s,x-baggage-AF-region:%s,dc:%s,Address:%s,Port:%d,extaddress:%s,extport:%s",
+		service.Service.Service,
+		service.Service.Meta["x-baggage-AF-env"],
+		service.Service.Meta["x-baggage-AF-region"],
+		service.Service.Meta["dc"],
+		service.Service.Address,
+		service.Service.Port,
+		service.Service.Meta["extaddress"],
+		service.Service.Meta["extport"])
+
+	return logmess
+}
+
+func ServiceEntryArrayPrint(services []*api.ServiceEntry) string {
+	// entry.Service.Meta["x-baggage-AF-env"]; ok {
+	// 	if entryregion, ok := entry.Service.Meta["x-baggage-AF-region"]; ok {
+	// 		if entrydc, ok := entry.Service.Meta["dc"]; ok {
+	// 			entryextaddress, _ := entry.Service.Meta["extaddress"]
+	// 			entryextport, _ := entry.Service.Meta["extport"]
+	// 			entry.Service.Address + ":" + strconv.Itoa(entry.Service.Port),
+	var logmess = ""
+	for _, s := range services {
+		logmess += ServiceEntryPrint(s)
+		logmess += fmt.Sprintln()
+	}
+
+	return logmess
+}
+
 func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
 	logger := logagent.Inst(c)
@@ -473,7 +509,7 @@ func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry
 	if err != nil {
 		logger.Panic(err)
 	}
-	logger.Info(service)
+	logger.Info(ServiceEntryArrayPrint(service))
 
 	// var bytetmps bytes.Buffer
 	// enc := gob.NewEncoder(&bytetmps)
