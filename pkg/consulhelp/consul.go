@@ -5,8 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
+
 	"net/http"
 	"strings"
 	"sync"
@@ -67,7 +68,7 @@ func ClsConfig() {
 }
 
 func StartWatch(prefix string, fulfil bool, c context.Context) {
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	watchConfig := make(map[string]interface{})
 	watchConfig["type"] = "keyprefix"
 	watchConfig["prefix"] = prefix
@@ -120,7 +121,7 @@ func StartWatch(prefix string, fulfil bool, c context.Context) {
  * get resource information
  */
 func Getconfaml(prefix, entityType, entityId, env string, c context.Context) map[string]interface{} {
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	maptmp := make(map[string]interface{})
 	resbytes := Getconfibytes(prefix, entityType, entityId, env, c)
 	err := yaml.Unmarshal(resbytes, &maptmp)
@@ -156,20 +157,20 @@ func DelConfig(prefix, entityType, entityId, env string, c context.Context) {
 
 func DelConfigFull(key string, c context.Context) {
 	// Get a new client
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	conf := api.DefaultConfig()
 	conf.Address = *consulsets.Consul_host
 	// conf.Address
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	writeOptions := &api.WriteOptions{Token: *consulsets.Acltoken}
 	meta, err := client.KV().Delete(key, writeOptions)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
@@ -182,7 +183,7 @@ func DelConfigFull(key string, c context.Context) {
 }
 
 func PutConfigFull(key string, value []byte, c context.Context) {
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	logger.Info(key)
 	kv := &api.KVPair{
 		Key:   key,
@@ -195,13 +196,13 @@ func PutConfigFull(key string, value []byte, c context.Context) {
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	writeOptions := &api.WriteOptions{Token: *consulsets.Acltoken}
 	meta, err := client.KV().Put(kv, writeOptions)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	logger.Info(meta)
 }
@@ -212,7 +213,7 @@ func PutConfig(prefix, entityType, entityId, env string, value []byte, c context
 }
 
 func GetConfigs(prefix, entityType string, c context.Context) api.KVPairs {
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	var key = prefix + entityType
 
 	// Get a new client
@@ -222,7 +223,7 @@ func GetConfigs(prefix, entityType string, c context.Context) api.KVPairs {
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	// Get a handle to the KV API
@@ -246,14 +247,30 @@ func GetServices(c context.Context) map[string][]string {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
 	// log.Print(servicename)
 
-	logger := logagent.Inst(c)
+	if ok, value := kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+		if val, ok := kvs["allconsulservices"]; ok {
+			return ok, val
+		} else {
+			return ok, nil
+		}
+	}); ok {
+		realvalue := value.(struct {
+			services  map[string][]string
+			lastCheck time.Time
+		})
+		if time.Duration(*consulsets.Cacheminutes)*time.Minute > time.Since(realvalue.lastCheck) {
+			return realvalue.services
+		}
+	}
+
+	logger := logagent.InstArch(c)
 	conf := api.DefaultConfig()
 	conf.Address = *consulsets.Consul_host
 	// conf.Address
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	// Get a handle to the KV API
 	catalog := client.Catalog()
@@ -268,12 +285,24 @@ func GetServices(c context.Context) map[string][]string {
 	// 	res[k] =
 	// }
 
+	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+
+		kvs["allconsulservices"] = struct {
+			services  map[string][]string
+			lastCheck time.Time
+		}{
+			services:  services,
+			lastCheck: time.Now(),
+		}
+		return true, nil
+	})
+
 	return services
 	// // PUT a new KV pair
 	// p := &api.KVPair{Key: "REDIS_MAXCLIENTS", Value: []byte("1000")}
 	// _, err = kv.Put(p, nil)
 	// if err != nil {
-	// 	panic(err)
+	// 	log.Panic(err)
 	// }
 
 	// Lookup the pair
@@ -282,7 +311,7 @@ func GetServices(c context.Context) map[string][]string {
 
 func GetService(servicename string, c context.Context) []*api.CatalogService {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	logger.Info(servicename)
 
 	conf := api.DefaultConfig()
@@ -291,7 +320,7 @@ func GetService(servicename string, c context.Context) []*api.CatalogService {
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	// Get a handle to the KV API
 	catalog := client.Catalog()
@@ -306,7 +335,7 @@ func GetService(servicename string, c context.Context) []*api.CatalogService {
 	// p := &api.KVPair{Key: "REDIS_MAXCLIENTS", Value: []byte("1000")}
 	// _, err = kv.Put(p, nil)
 	// if err != nil {
-	// 	panic(err)
+	// 	log.Panic(err)
 	// }
 
 	// Lookup the pair
@@ -325,7 +354,7 @@ type dcInfo struct {
 
 func GetHealthServiceDc(servicename string, c context.Context) []*api.ServiceEntry {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	logger.Info(servicename)
 	// time.Since(time.Now()).Minutes()
 	// f := *consulsets.Cacheminutes * time.Now().Minute()
@@ -348,13 +377,13 @@ func GetHealthServiceDc(servicename string, c context.Context) []*api.ServiceEnt
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	// Get a handle to the KV API
 	dcs := GetDc(c)
 	// dcs, err := client.Catalog().Datacenters()
 	// if err != nil {
-	// 	panic(err)
+	// 	log.Panic(err)
 	// }
 
 	health := client.Health()
@@ -389,7 +418,7 @@ func GetHealthServiceDc(servicename string, c context.Context) []*api.ServiceEnt
 	// p := &api.KVPair{Key: "REDIS_MAXCLIENTS", Value: []byte("1000")}
 	// _, err = kv.Put(p, nil)
 	// if err != nil {
-	// 	panic(err)
+	// 	log.Panic(err)
 	// }
 
 	// Lookup the pair
@@ -398,7 +427,7 @@ func GetHealthServiceDc(servicename string, c context.Context) []*api.ServiceEnt
 
 func GetDc(c context.Context) []string {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	// time.Since(time.Now()).Minutes()
 	// f := *consulsets.Cacheminutes * time.Now().Minute()
 
@@ -421,12 +450,12 @@ func GetDc(c context.Context) []string {
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	// Get a handle to the KV API
 	dcs, err := client.Catalog().Datacenters()
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 
 	logger.Info(dcs)
@@ -479,7 +508,7 @@ func ServiceEntryArrayPrint(services []*api.ServiceEntry) string {
 
 func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	logger.Info(servicename)
 	// time.Since(time.Now()).Minutes()
 	// f := *consulsets.Cacheminutes * time.Now().Minute()
@@ -502,7 +531,7 @@ func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry
 	conf.Token = *consulsets.Acltoken
 	client, err := api.NewClient(conf)
 	if err != nil {
-		panic(err)
+		log.Panic(err)
 	}
 	health := client.Health()
 	service, _, err := health.Service(servicename, "", true, &api.QueryOptions{})
@@ -528,7 +557,7 @@ func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry
 	// p := &api.KVPair{Key: "REDIS_MAXCLIENTS", Value: []byte("1000")}
 	// _, err = kv.Put(p, nil)
 	// if err != nil {
-	// 	panic(err)
+	// 	log.Panic(err)
 	// }
 
 	// Lookup the pair
@@ -537,7 +566,7 @@ func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry
 
 func GetConfigFull(key string, c context.Context) []byte {
 	// var key = prefix + entityType + "/" + entityId + "/" + env
-	logger := logagent.Inst(c)
+	logger := logagent.InstArch(c)
 	logger.Info(key)
 
 	// if val, ok := kvmap[key]; ok {
@@ -585,7 +614,7 @@ func GetConfigFull(key string, c context.Context) []byte {
 	// p := &api.KVPair{Key: "REDIS_MAXCLIENTS", Value: []byte("1000")}
 	// _, err = kv.Put(p, nil)
 	// if err != nil {
-	// 	panic(err)
+	// 	log.Panic(err)
 	// }
 
 	// Lookup the pair
@@ -630,12 +659,13 @@ func GetConfigFull(key string, c context.Context) []byte {
 /**
  * get resource information
  */
-func Sendconfig2consul(entityType string, entityId string, env string, content string) (string, error) {
+func Sendconfig2consul(entityType string, entityId string, env string, content string, c context.Context) (string, error) {
+	logger := logagent.InstArch(c)
 	var url = *consulsets.Consul_host + "/v1/kv/ops/resource/" + entityType + "/" + entityId + "/" + env
 	if len(*consulsets.Acltoken) > 0 {
 		url += "?token=" + *consulsets.Acltoken
 	}
-	log.Printf("get infrastructure info url: %s", url)
+	logger.Printf("get infrastructure info url: %s", url)
 
 	return httpPut(url, content)
 }
@@ -656,7 +686,7 @@ func httpPut(url string, body string) (string, error) {
 			return "", reserr
 		} else {
 			defer res.Body.Close()
-			resbody, resbodyerr := ioutil.ReadAll(res.Body)
+			resbody, resbodyerr := io.ReadAll(res.Body)
 
 			if resbodyerr != nil {
 				return "", resbodyerr
@@ -668,25 +698,29 @@ func httpPut(url string, body string) (string, error) {
 
 }
 
-/**
+/*
+*
 将json字符串反序列化成map对象
 */
-func extractValueFromJsonMsg(jsonString string) string {
+func extractValueFromJsonMsg(jsonString string, c context.Context) string {
 	var list []map[string]interface{}
+	logger := logagent.InstArch(c)
 
 	err := json.Unmarshal([]byte(jsonString), &list)
 	if err != nil {
-		log.Fatalf("convert json to map error: %v", err)
+		logger.Fatalf("convert json to map error: %v", err)
 	}
 
 	return fmt.Sprintf("%v", list[0]["Value"])
 	// return convertops.StrValOfInterface(list[0]["Value"])
 }
 
-func base64Decode(value string) string {
+func base64Decode(value string, c context.Context) string {
+	logger := logagent.InstArch(c)
+
 	result, err := base64.StdEncoding.DecodeString(value)
 	if err != nil {
-		fmt.Printf("base64 decode failure, error=[%v]\n", err)
+		logger.Printf("base64 decode failure, error=[%v]\n", err)
 	}
 	return string(result)
 }

@@ -6,6 +6,7 @@ PACKAGES = $(shell go list ./... | grep -v /vendor/)
 TESTARGS ?= -race
 #os = linux or darwin
 os=linux
+arch=amd64
 
 CURRENTDIR = $(shell pwd)
 SOURCEDIR = $(CURRENTDIR)
@@ -21,7 +22,7 @@ all: build
 
 .PHONY: clean build docker check
 default: build
-build: dist/config-resolver
+build: dist/consulagent
 
 test:
 # go test -v  github.com/max-gui/consulagent/internal/confgen -test.run makeconfiglist
@@ -35,9 +36,9 @@ test:
 clean:
 	rm -rf dist vendor
 
-dist/config-resolver:
+dist/consulagent:
 	mkdir -p $(@D)
-	CGO_ENABLED=0 GOOS=${os} go build $(LD_FLAGS) -v -o dist/${PREFIX} cmd/${PREFIX}/main.go
+	CGO_ENABLED=0 GOOS=${os} GOARCH=${arch} go build $(LD_FLAGS) -v -o dist/${PREFIX} cmd/${PREFIX}/main.go
 
 docker:
 	docker build -t $(PREFIX):$(VERSION) .
