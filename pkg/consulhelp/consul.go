@@ -67,6 +67,82 @@ func ClsConfig() {
 	// kvmap = make(map[string][]byte)
 }
 
+func StartWatchEvent(name string, fulfil bool, c context.Context) {
+	logger := logagent.InstArch(c)
+	watchConfig := make(map[string]interface{})
+	watchConfig["type"] = "event"
+	watchConfig["name"] = name
+	// watchConfig["handler_type"] = "script"
+	watchPlan, err := watch.Parse(watchConfig)
+	watchPlan.Token = *consulsets.Acltoken
+	if err != nil {
+		logger.Panic(err)
+	}
+	// watchPlan.Type
+	// 	watchPlan.Watcher = func(p *watch.Plan) (watch.BlockingParamVal, interface{}, error) {
+	// 		p.HandlerType
+	// 	}
+	// var kvmap = make(map[string][]byte)
+	watchPlan.Handler = func(lastIndex uint64, result interface{}) {
+
+		event := result.([]*api.UserEvent)
+
+		logger.Info(event)
+
+		for _, ev := range event {
+			if fulfil {
+				// serviceid := string(ev.Payload)
+				// // serviceid = "af-autoleasing-security-gateway-prod-default-5d7d49984f-c2mc7"
+				// servicename := ""
+				// snslice := strings.Split(serviceid, "-")
+
+				// for _, s := range snslice[:len(snslice)-2] {
+				// 	servicename = servicename + "-" + s
+				// }
+
+				servicecontainer := string(ev.Payload)
+				servicename := servicecontainer
+				servicename = strings.Split(servicename, "-test")[0]
+				servicename = strings.Split(servicename, "-uat")[0]
+				servicename = strings.Split(servicename, "-prod")[0]
+
+				logger.Info("service is down,name is:" + servicename)
+				RemoveUnhealthService(servicename, c)
+			}
+		}
+		fulfil = true
+		// event.LTime
+		// // if keys == nil {
+		// // 	// vmap = make(map[string][]byte)
+		// // } else {
+		// // log.Print(watchPlan.Type)
+		// // log.Print(watchPlan.HandlerType)
+		// for _, v := range keys {
+		// 	if fulfil || v.ModifyIndex == lastIndex {
+		// 		logger.Print(string(v.Value))
+		// 		kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+		// 			kvs[v.Key] = v.Value
+		// 			return true, nil
+		// 		})
+		// 		// kvmap[v.Key] = v.Value
+		// 	}
+		// }
+		// // }
+		// fulfil = false
+
+	}
+
+	conf := api.DefaultConfig()
+	conf.Address = *consulsets.Consul_host
+
+	conf.Token = *consulsets.Acltoken
+
+	err = watchPlan.Run(*consulsets.Consul_host)
+	if err != nil {
+		logger.Fatalf("start watch error, error message: %s", err.Error())
+	}
+}
+
 func StartWatch(prefix string, fulfil bool, c context.Context) {
 	logger := logagent.InstArch(c)
 	watchConfig := make(map[string]interface{})
@@ -504,6 +580,14 @@ func ServiceEntryArrayPrint(services []*api.ServiceEntry) string {
 	}
 
 	return logmess
+}
+
+func RemoveUnhealthService(servicename string, c context.Context) {
+	kvmap.help(func(kvs map[string]interface{}) (bool, interface{}) {
+		delete(kvs, servicename)
+		delete(kvs, servicename+"_dc")
+		return true, nil
+	})
 }
 
 func GetHealthService(servicename string, c context.Context) []*api.ServiceEntry {
